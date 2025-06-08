@@ -5,49 +5,28 @@ CLASS zcl_wkrordr_crud_handler DEFINITION
 
   PUBLIC SECTION.
     METHODS:
-      validate_create_order IMPORTING iv_customer_id   TYPE z_custmr
-                                      iv_technician_id TYPE z_technician
-                                      iv_priority      TYPE z_priority_tmh
-                            EXPORTING ev_error         TYPE string
-                            RETURNING VALUE(rv_valid)  TYPE abap_bool,
+      create_work_order IMPORTING iv_customer_id          TYPE z_custmr
+                                  iv_technician_id        TYPE z_technician
+                                  iv_priority             TYPE z_priority_tmh
+                                  iv_description          TYPE z_description_tmh
+                        RETURNING VALUE(rv_create_result) TYPE string,
 
-      validate_update_order IMPORTING iv_work_order_id TYPE z_wrkordr
-                                      iv_status        TYPE z_status_tmh
-                            EXPORTING ev_error         TYPE string
-                            RETURNING VALUE(rv_valid)  TYPE abap_bool,
+      read_work_order IMPORTING iv_work_order_id      TYPE z_wrkordr
+                      RETURNING VALUE(rv_read_result) TYPE string,
 
-      validate_delete_order IMPORTING iv_work_order_id TYPE z_wrkordr
-                                      iv_status        TYPE z_status_tmh
-                            EXPORTING ev_error         TYPE string
-                            RETURNING VALUE(rv_valid)  TYPE abap_bool,
+      update_work_order IMPORTING iv_work_order_id        TYPE z_wrkordr
+                                  iv_status               TYPE z_status_tmh
+                                  iv_description          TYPE z_description_tmh
+                        RETURNING VALUE(rv_update_result) TYPE string,
 
-      validate_status_and_priority IMPORTING iv_status       TYPE z_status_tmh
-                                             iv_priority     TYPE z_priority_tmh
-                                   EXPORTING ev_error        TYPE string
-                                   RETURNING VALUE(rv_valid) TYPE abap_bool.
+      delete_work_order IMPORTING iv_work_order_id        TYPE z_wrkordr
+                                  iv_status               TYPE z_status_tmh
+                        RETURNING VALUE(rv_delete_result) TYPE string.
 
 
 
   PROTECTED SECTION.
   PRIVATE SECTION.
-    METHODS:
-      check_customer_exists IMPORTING iv_customer_id   TYPE z_custmr
-                            RETURNING VALUE(rv_exists) TYPE abap_bool,
-
-      check_technician_exists IMPORTING iv_technician_id TYPE z_technician
-                              RETURNING VALUE(rv_exists) TYPE abap_bool,
-
-      check_priority_valid IMPORTING iv_priority      TYPE z_priority_tmh
-                           RETURNING VALUE(rv_exists) TYPE abap_bool,
-
-      check_order_exists IMPORTING iv_work_order_id TYPE z_wrkordr
-                         RETURNING VALUE(rv_exists) TYPE abap_bool,
-
-      check_order_history IMPORTING iv_work_order_id TYPE z_wrkordr
-                          RETURNING VALUE(rv_exists) TYPE abap_bool.
-
-
-
     CONSTANTS: BEGIN OF mc_valid_status,
                  Pending   TYPE z_status_tmh VALUE 'PE',
                  Completed TYPE z_status_tmh VALUE 'CO',
@@ -63,186 +42,128 @@ CLASS zcl_wkrordr_crud_handler DEFINITION
 ENDCLASS.
 
 
-
 CLASS zcl_wkrordr_crud_handler IMPLEMENTATION.
 
-  METHOD check_customer_exists.
+  METHOD create_work_order.
 
-    SELECT SINGLE FROM ztbl_customers
-    FIELDS customer_id
-    WHERE customer_id EQ @iv_customer_id
-    INTO @DATA(lv_customer_id).
+    DATA(lr_create_order_validate) = NEW zcl_wrkordr_validator( ). "Calls method to validate operation
 
-    IF sy-subrc EQ 0.
-      rv_exists = abap_true.
-    ELSE.
-      rv_exists = abap_false.
-    ENDIF.
+    lr_create_order_validate->validate_create_order(
+        EXPORTING
+            iv_customer_id = iv_customer_id
+            iv_technician_id = iv_technician_id
+            iv_priority = iv_priority
+        IMPORTING
+            ev_error = rv_create_result
+        RECEIVING
+            rv_valid_cr = DATA(lv_valid) ).
 
-  ENDMETHOD.
+    IF lv_valid = abap_true.               "If the specified values are valid, they are inserted into a new row in the DDBB table
+      SELECT SINGLE FROM ztbl_work_order
+         FIELDS MAX( work_order_id )
+         WHERE work_order_id IS NOT INITIAL
+         INTO @DATA(lv_work_order_id).
 
-  METHOD check_technician_exists.
+      INSERT ztbl_work_order FROM @( VALUE #( work_order_id = lv_work_order_id + 1
+                                              customer_id = iv_customer_id
+                                              technician_id = iv_technician_id
+                                              creation_date = cl_abap_context_info=>get_system_date( )
+                                              status = mc_valid_status-Pending
+                                              priority = iv_priority
+                                              description = iv_description ) ).
 
-    SELECT SINGLE FROM ztbl_technician
-    FIELDS technician_id
-    WHERE technician_id EQ @iv_technician_id
-    INTO @DATA(lv_technician_id).
-
-    IF sy-subrc EQ 0.
-      rv_exists = abap_true.
-    ELSE.
-      rv_exists = abap_false.
-    ENDIF.
-
-  ENDMETHOD.
-
-  METHOD check_priority_valid.
-
-    SELECT SINGLE FROM ztbl_priority_tm
-    FIELDS priority_code
-    WHERE priority_code EQ @iv_priority
-    INTO @DATA(lv_priority).
-
-    IF sy-subrc EQ 0.
-      IF lv_priority = mc_valid_priority.
-        rv_exists = abap_true.
+      IF sy-subrc = 0.
+        rv_create_result = |Worker order { lv_work_order_id + 1 } has been succesfully created.|.
       ELSE.
-        rv_exists = abap_false.
+        rv_create_result = |Work order was not created.|.
       ENDIF.
     ELSE.
-      rv_exists = abap_false.
+      rv_create_result = |Specified values are not valid. Input different values.|.
     ENDIF.
 
   ENDMETHOD.
 
-  METHOD check_order_exists.
+  METHOD read_work_order.
 
-    SELECT SINGLE FROM ztbl_work_order
-    FIELDS work_order_id
+    SELECT FROM ztbl_work_order          "Reads the row from the DDBB table with specified work order ID
+    FIELDS *
     WHERE work_order_id EQ @iv_work_order_id
-    INTO @DATA(lv_work_order_id).
+    INTO @DATA(wawa).
 
-    IF sy-subrc EQ 0.
-      rv_exists = abap_true.
+      IF sy-subrc NE 0.
+        rv_read_result = |no se pudo pq el sysubrc es { sy-subrc }|.
+      ELSE.
+        rv_read_Result = wawa.
+      ENDIF.
+
+    ENDSELECT.
+  ENDMETHOD.
+
+  METHOD update_work_order.
+
+    DATA(lr_update_order_validate) = NEW zcl_wrkordr_validator( ). "Calls method to validate operation
+
+    lr_update_order_validate->validate_update_order(
+        EXPORTING
+            iv_work_order_id = iv_work_order_id
+            iv_status = iv_status
+         IMPORTING
+            ev_error = rv_update_result
+         RECEIVING
+            rv_valid_up = DATA(lv_valid) ).
+
+    IF lv_valid = abap_true.                     "If the specified values are valid, updates the row with the specified work order ID into a specified status
+      UPDATE ztbl_work_order SET status = @iv_status
+                             WHERE work_order_id = @iv_work_order_id.
+      IF sy-subrc EQ 0.
+
+        SELECT SINGLE FROM ztbl_wrkord_his     "Reads last history ID
+        FIELDS MAX( history_id )
+        WHERE history_id GE 0
+        INTO @DATA(lv_history_id).
+
+        INSERT ztbl_wrkord_his FROM @( VALUE #(  history_id = lv_history_id + 1    "Updates and adds row to changes history DDBB table
+                                                 work_order_id = iv_work_order_id
+                                                 modification_date = cl_abap_context_info=>get_system_date( )
+                                                 change_description = iv_description ) ).
+
+        IF sy-subrc EQ 0.
+          rv_update_result = |Order { iv_work_order_id } succesfully updated and has been registered to history table where history ID is { lv_history_id + 1 }.|.
+        ELSE.
+          rv_update_result = |Order { iv_work_order_id } succesfully updated, but the change record was not added to history table. sy-subrc is { sy-subrc }|.
+        ENDIF.
+      ELSE.
+        rv_update_result = |Order { iv_work_order_id } was not updated.|.
+      ENDIF.
     ELSE.
-      rv_exists = abap_false.
+      rv_update_result = |Order { iv_work_order_id } is not valid to update.|.
     ENDIF.
 
   ENDMETHOD.
 
-  METHOD check_order_history.
+  METHOD delete_work_order.
 
-    SELECT SINGLE FROM ztbl_wrkordr_his
-    FIELDS work_order_id
-    WHERE work_order_id EQ @iv_work_order_id
-    INTO @DATA(lv_work_order_id).
+    DATA(lr_create_order_validate) = NEW zcl_wrkordr_validator( ). "Calls method to validate operation
 
-    IF sy-subrc EQ 0.
-      rv_exists = abap_true.
+    lr_create_order_validate->validate_delete_order(
+        EXPORTING
+            iv_work_order_id = iv_work_order_id
+            iv_status = iv_status
+        IMPORTING
+            ev_error = rv_delete_result
+        RECEIVING
+            rv_valid_de = DATA(lv_valid) ).
+
+    IF lv_valid = abap_true.
+      DELETE FROM ztbl_work_order WHERE work_order_id EQ @iv_work_order_id.
+      IF sy-subrc EQ 0.
+        rv_delete_result = |Order { iv_work_order_id } succesfully deleted.|.
+      ELSE.
+        rv_delete_result = |Order { iv_work_order_id } has not been deleted.|.
+      ENDIF.
     ELSE.
-      rv_exists = abap_false.
+      rv_delete_result = |Order { iv_work_order_id } is not valid to delete.|.
     ENDIF.
-
-  ENDMETHOD.
-
-  METHOD validate_create_order. "Validates the client, technician and priority are valid before allowing the creation of a work order
-
-    " Check if customer exists
-    DATA(lv_customer_exists) = check_customer_exists( iv_customer_id ).
-    IF lv_customer_exists IS INITIAL.
-      rv_valid = abap_false.
-      ev_error = |Customer ID { iv_customer_id } does NOT exist.|.
-      RETURN.
-    ENDIF.
-
-    " Check if technician exists
-    DATA(lv_technician_exists) = check_technician_exists( iv_technician_id ).
-    IF lv_technician_exists IS INITIAL.
-      rv_valid = abap_false.
-      ev_error = |Technician ID { iv_technician_id } does NOT exist.|.
-      RETURN.
-    ENDIF.
-
-    " Check if priority is valid
-    DATA(lv_priority_valid) = check_priority_valid( iv_priority ).
-    IF lv_priority_valid IS INITIAL.
-      rv_valid = abap_false.
-      ev_error = |Priority { iv_priority } is not valid.|.
-      RETURN.
-    ENDIF.
-
-    rv_valid = abap_true.
-
-  ENDMETHOD.
-
-  METHOD validate_update_order. "Validates if a work order can be updated if it exists and if its status allows it
-
-    " Check if the work order exists
-    DATA(lv_order_exists) = check_order_exists( iv_work_order_id ).
-    IF lv_order_exists IS INITIAL.
-      rv_valid = abap_false.
-      ev_error = |Work Order ID { iv_work_order_id } does NOT exist.|.
-      RETURN.
-    ENDIF.
-
-    " Check if the order status is editable (e.g., Pending)
-    IF iv_status <> mc_valid_status-Pending.
-      rv_valid = abap_false.
-      ev_error = |Status is non editable|.
-      RETURN.
-    ENDIF.
-
-    rv_valid = abap_true.
-
-  ENDMETHOD.
-
-
-  METHOD validate_delete_order. "Verifies only work orders with pending status and no previous history can be deleted
-
-    " Check if the order exists
-    DATA(lv_order_exists) = check_order_exists( iv_work_order_id ).
-    IF lv_order_exists IS INITIAL.
-      rv_valid = abap_false.
-      ev_error = |Work Order ID { iv_work_order_id } does NOT exist.|.
-      RETURN.
-    ENDIF.
-
-    " Check if the order status is "PE" (Pending)
-    IF iv_status <> mc_valid_status-Pending.
-      rv_valid = abap_false.
-      ev_error = |Status is non editable|.
-      RETURN.
-    ENDIF.
-
-    " Check if the order has a history (i.e., if it has been modified before)
-    DATA(lv_has_history) = check_order_history( iv_work_order_id ).
-    IF lv_has_history IS INITIAL.
-      rv_valid = abap_false.
-      ev_error = |Order { iv_work_order_id } has been modified before.|.
-      RETURN.
-    ENDIF.
-
-    rv_valid = abap_true.
-
-  ENDMETHOD.
-
-  METHOD validate_status_and_priority. "Validates both status and priority values are valid
-
-    " Validate the status value
-    IF iv_status <> mc_valid_status.
-      rv_valid = abap_false.
-      ev_error = |Status is not valid.|.
-      RETURN.
-    ENDIF.
-
-    " Validate the priority value
-    IF iv_priority <> mc_valid_priority.
-      rv_valid = abap_false.
-      ev_error = |Priority { iv_priority } is not valid.|.
-      RETURN.
-    ENDIF.
-
-    rv_valid = abap_true.
 
   ENDMETHOD.
 
