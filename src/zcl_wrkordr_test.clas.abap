@@ -174,6 +174,7 @@ CLASS zcl_wrkordr_test IMPLEMENTATION.
       ELSE.
 
         out->write( lc_no_auth ).
+        RETURN.
 
       ENDIF.
 
@@ -200,6 +201,7 @@ CLASS zcl_wrkordr_test IMPLEMENTATION.
       ELSE.
 
         out->write( lc_no_auth ).
+        RETURN.
 
       ENDIF.
 
@@ -225,6 +227,7 @@ CLASS zcl_wrkordr_test IMPLEMENTATION.
       ELSE.
 
         out->write( lc_no_auth ).
+        RETURN.
 
       ENDIF.
 
